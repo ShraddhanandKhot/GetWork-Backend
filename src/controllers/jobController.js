@@ -175,3 +175,45 @@ exports.updateApplicationStatus = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+exports.deleteJob = async (req, res) => {
+  try {
+    const jobId = req.params.id;
+
+    const job = await Job.findOne({ _id: jobId, orgId: req.user.id });
+
+    if (!job)
+      return res.status(404).json({ success: false, message: "Job not found" });
+
+    await Job.deleteOne({ _id: jobId });
+
+    res.json({ success: true, message: "Job deleted" });
+  } catch (err) {
+    console.error("DELETE JOB ERROR:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.updateJob = async (req, res) => {
+  try {
+    const jobId = req.params.id;
+
+    const updatedData = req.body;
+
+    const job = await Job.findOneAndUpdate(
+      { _id: jobId, orgId: req.user.id },
+      updatedData,
+      { new: true }
+    );
+
+    if (!job)
+      return res.status(404).json({ success: false, message: "Job not found" });
+
+    res.json({ success: true, message: "Job updated", job });
+  } catch (err) {
+    console.error("UPDATE JOB ERROR:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+

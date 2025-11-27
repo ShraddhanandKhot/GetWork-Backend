@@ -12,6 +12,9 @@ router.get("/my-jobs", auth, jobCtrl.getOrgJobs);
 router.get("/:id", jobCtrl.getJob);
 router.post("/:id/apply", auth, jobCtrl.applyJob);
 router.put("/:id/application/:workerId", auth, jobCtrl.updateApplicationStatus);
+router.delete("/:id", auth, jobCtrl.deleteJob);
+router.put("/:id", auth, jobCtrl.updateJob);
+
 
 
 module.exports = router;
