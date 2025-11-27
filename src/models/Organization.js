@@ -5,7 +5,7 @@ const OrgSchema = new mongoose.Schema({
   location: String,
   phone: { type: String, required: true, unique: true },
   email: String,
-  email: String,
+  password: { type: String, required: true },
   verified: { type: Boolean, default: false },
 }, { timestamps: true });
 

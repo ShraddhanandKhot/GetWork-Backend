@@ -9,6 +9,7 @@ const WorkerSchema = new mongoose.Schema({
   phone: { type: String, required: true, unique: true },
   expectedSalary: String,
   availability: String,
+  password: { type: String, required: true },
   referredBy: String,
   verified: { type: Boolean, default: false },
 }, { timestamps: true });
