@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const User = require("../models/User");
 const Worker = require("../models/Worker");
 const Organization = require("../models/Organization");
 
@@ -8,31 +9,20 @@ function genToken(payload) {
 }
 
 /* ================================
-   WORKER REGISTER
+   REGISTER (USER ACCOUNT)
 ================================ */
-exports.registerWorker = async (req, res) => {
+exports.register = async (req, res) => {
   try {
-    const { name, age, skills, location, phone, password } = req.body;
+    const { email, phone, password } = req.body;
 
-    if (!name || !phone || !password) {
+    if (!phone || !password) {
       return res.status(400).json({
         success: false,
-        message: "Missing fields",
+        message: "Phone and password are required",
       });
     }
 
-    // FIX: Safe skills handling
-    let skillsArray = [];
-
-    if (Array.isArray(skills)) {
-      skillsArray = skills;
-    } else if (typeof skills === "string") {
-      skillsArray = skills.split(",").map((s) => s.trim());
-    } else {
-      skillsArray = [];
-    }
-
-    const exists = await Worker.findOne({ phone });
+    const exists = await User.findOne({ phone });
     if (exists) {
       return res.status(400).json({
         success: false,
@@ -42,119 +32,24 @@ exports.registerWorker = async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 10);
 
-    const w = await Worker.create({
-      name,
-      age,
-      skills: skillsArray,
-      location,
-      phone,
-      password: hashed,
-    });
-
-    const token = genToken({ id: w._id, role: "worker" });
-
-    res.json({
-      success: true,
-      message: "Worker registered successfully",
-      token,
-      user: { id: w._id, name: w.name },
-    });
-
-  } catch (err) {
-    console.error("WORKER REGISTER ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
-
-
-/* ================================
-   WORKER LOGIN
-================================ */
-exports.loginWorker = async (req, res) => {
-  try {
-    const { phone, password } = req.body;
-
-    const w = await Worker.findOne({ phone });
-    if (!w) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid phone or password",
-      });
-    }
-
-    const match = await bcrypt.compare(password, w.password);
-    if (!match) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid phone or password",
-      });
-    }
-
-    const token = genToken({ id: w._id, role: "worker" });
-
-    res.json({
-      success: true,
-      message: "Login successful",
-      token,
-      user: { id: w._id, name: w.name },
-    });
-
-  } catch (err) {
-    console.error("WORKER LOGIN ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
-
-
-/* ================================
-   ORGANIZATION REGISTER
-================================ */
-exports.registerOrg = async (req, res) => {
-  try {
-    const { name, location, phone, email, password } = req.body;
-
-    if (!name || !phone || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing fields",
-      });
-    }
-
-    const exists = await Organization.findOne({ phone });
-    if (exists) {
-      return res.status(400).json({
-        success: false,
-        message: "Phone already registered",
-      });
-    }
-
-    const hashed = await bcrypt.hash(password, 10);
-
-    const o = await Organization.create({
-      name,
-      location,
-      phone,
+    const user = await User.create({
       email,
+      phone,
       password: hashed,
+      role: "none",
     });
 
-    const token = genToken({ id: o._id, role: "org" });
+    const token = genToken({ id: user._id, role: "none" });
 
     res.json({
       success: true,
-      message: "Organization registered successfully",
+      message: "Account created successfully",
       token,
-      org: { id: o._id, name: o.name },
+      user: { id: user._id, phone: user.phone, role: "none" },
     });
 
   } catch (err) {
-    console.error("ORG REGISTER ERROR:", err);
+    console.error("REGISTER ERROR:", err);
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -162,84 +57,159 @@ exports.registerOrg = async (req, res) => {
   }
 };
 
-
 /* ================================
-   ORGANIZATION LOGIN
+   LOGIN
 ================================ */
-exports.loginOrg = async (req, res) => {
+exports.login = async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { identifier, password } = req.body; // identifier can be phone or email
 
-    const o = await Organization.findOne({ phone });
-    if (!o) {
+    if (!identifier || !password) {
       return res.status(400).json({
         success: false,
-        message: "Invalid phone or password",
+        message: "Phone/Email and password are required",
       });
     }
 
-    const match = await bcrypt.compare(password, o.password);
+    // Check if identifier is email or phone
+    const isEmail = identifier.includes("@");
+    const query = isEmail ? { email: identifier } : { phone: identifier };
+
+    const user = await User.findOne(query);
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid credentials",
+      });
+    }
+
+    const match = await bcrypt.compare(password, user.password);
     if (!match) {
       return res.status(400).json({
         success: false,
-        message: "Invalid phone or password",
+        message: "Invalid credentials",
       });
     }
 
-    const token = genToken({ id: o._id, role: "org" });
+    const token = genToken({ id: user._id, role: user.role });
 
     res.json({
       success: true,
       message: "Login successful",
       token,
-      org: { id: o._id, name: o.name },
+      user: {
+        id: user._id,
+        phone: user.phone,
+        role: user.role,
+        isProfileComplete: user.role !== "none"
+      },
     });
 
   } catch (err) {
-    console.error("ORG LOGIN ERROR:", err);
+    console.error("LOGIN ERROR:", err);
     res.status(500).json({
       success: false,
       message: "Server error",
     });
   }
 };
-exports.getWorkerProfile = async (req, res) => {
-  try {
-    const worker = await Worker.findById(req.user.id).select("-password");
 
-    if (!worker) {
-      return res.status(404).json({
-        success: false,
-        message: "Worker not found",
+/* ================================
+   CREATE PROFILE
+================================ */
+exports.createProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { role, ...profileData } = req.body;
+
+    if (!["worker", "organization"].includes(role)) {
+      return res.status(400).json({ success: false, message: "Invalid role" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (user.role !== "none") {
+      return res.status(400).json({ success: false, message: "Profile already exists" });
+    }
+
+    let profile;
+    if (role === "worker") {
+      // Handle skills array safely
+      let skillsArray = [];
+      if (Array.isArray(profileData.skills)) {
+        skillsArray = profileData.skills;
+      } else if (typeof profileData.skills === "string") {
+        skillsArray = profileData.skills.split(",").map((s) => s.trim());
+      }
+
+      profile = await Worker.create({
+        ...profileData,
+        skills: skillsArray,
+        phone: user.phone, // Ensure phone matches user
       });
+    } else {
+      profile = await Organization.create({
+        ...profileData,
+        phone: user.phone, // Ensure phone matches user
+        email: user.email || profileData.email,
+      });
+    }
+
+    user.role = role;
+    user.profileId = profile._id;
+    await user.save();
+
+    const token = genToken({ id: user._id, role: user.role });
+
+    res.json({
+      success: true,
+      message: "Profile created successfully",
+      token,
+      user: { id: user._id, role: user.role, isProfileComplete: true },
+    });
+
+  } catch (err) {
+    console.error("CREATE PROFILE ERROR:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+/* ================================
+   GET PROFILE
+================================ */
+exports.getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    if (user.role === "none") {
+      return res.json({ success: true, role: "none", profile: null });
+    }
+
+    let profile;
+    if (user.role === "worker") {
+      profile = await Worker.findById(user.profileId);
+    } else if (user.role === "organization") {
+      profile = await Organization.findById(user.profileId);
     }
 
     res.json({
       success: true,
-      worker,
+      role: user.role,
+      profile,
     });
 
   } catch (err) {
-    console.error("GET WORKER PROFILE ERROR:", err);
+    console.error("GET PROFILE ERROR:", err);
     res.status(500).json({
       success: false,
       message: "Server error",
     });
   }
 };
-
-exports.getOrgProfile = async (req, res) => {
-  try {
-    const org = await Organization.findById(req.user.id).select("-password");
-
-    if (!org) {
-      return res.status(404).json({ success: false, message: "Organization not found" });
-    }
-
-    res.json({ success: true, org });
-  } catch (err) {
-    console.error("ORG PROFILE ERROR:", err);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-};
-
