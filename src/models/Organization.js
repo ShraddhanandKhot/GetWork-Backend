@@ -5,6 +5,9 @@ const OrgSchema = new mongoose.Schema({
   location: String,
   phone: { type: String, required: true, unique: true },
   email: String,
+  otp: String,
+  otpExpires: Date,
+
   password: { type: String, required: true },
   verified: { type: Boolean, default: false },
 }, { timestamps: true });

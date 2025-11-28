@@ -242,3 +242,70 @@ exports.getOrgProfile = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+exports.sendOTP = async (req, res) => {
+  try {
+    const { phone } = req.body;
+
+    const user =
+      (await Worker.findOne({ phone })) ||
+      (await Organization.findOne({ phone }));
+
+    if (!user)
+      return res
+        .status(400)
+        .json({ success: false, message: "Phone not registered" });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    user.otp = otp;
+    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+    await user.save();
+
+    console.log("Generated OTP:", otp); // TEMP for testing
+
+    res.json({ success: true, message: "OTP sent successfully" });
+  } catch (err) {
+    console.error("SEND OTP ERROR:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.verifyOTP = async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+
+    const user =
+      (await Worker.findOne({ phone })) ||
+      (await Organization.findOne({ phone }));
+
+    if (!user)
+      return res.status(400).json({ success: false, message: "User not found" });
+
+    if (user.otp !== otp || Date.now() > user.otpExpires)
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired OTP" });
+
+    user.otp = null;
+    user.otpExpires = null;
+    await user.save();
+
+    const role = user instanceof Worker ? "worker" : "organization";
+
+    const token = jwt.sign({ id: user._id, role }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
+    res.json({
+      success: true,
+      message: "OTP Verified",
+      token,
+      role,
+    });
+  } catch (err) {
+    console.error("VERIFY OTP ERROR:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+

@@ -11,6 +11,9 @@ const WorkerSchema = new mongoose.Schema({
   availability: String,
   password: { type: String, required: true },
   referredBy: String,
+  otp: String,
+  otpExpires: Date,
+
   verified: { type: Boolean, default: false },
 }, { timestamps: true });
 

@@ -12,5 +12,8 @@ router.get("/worker/profile", authMiddleware, authCtrl.getWorkerProfile);
 router.get("/org/profile", authMiddleware, authCtrl.getOrgProfile);
 
 
+router.post("/send-otp", authCtrl.sendOTP);
+router.post("/verify-otp", authCtrl.verifyOTP);
+
 
 module.exports = router;
