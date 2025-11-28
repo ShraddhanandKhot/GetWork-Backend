@@ -243,30 +243,69 @@ exports.getOrgProfile = async (req, res) => {
   }
 };
 
+const axios = require("axios");
+// ... other requires at top of file (bcrypt, jwt, Worker, Organization, etc.)
+
 exports.sendOTP = async (req, res) => {
   try {
     const { phone } = req.body;
+    if (!phone) {
+      return res.status(400).json({ success: false, message: "Missing phone number" });
+    }
 
     const user =
       (await Worker.findOne({ phone })) ||
       (await Organization.findOne({ phone }));
 
-    if (!user)
-      return res
-        .status(400)
-        .json({ success: false, message: "Phone not registered" });
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Phone not registered" });
+    }
 
+    // generate 6 digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     user.otp = otp;
-    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 min expiry
     await user.save();
 
-    console.log("Generated OTP:", otp); // TEMP for testing
+    // --- FAST2SMS request ---
+    // Build the message (keep it short)
+    const message = `Your GetWork OTP is ${otp}. It will expire in 5 minutes.`;
 
-    res.json({ success: true, message: "OTP sent successfully" });
+    // Fast2SMS bulkV2 expects a POST JSON body like {message, language, route, numbers}
+    // numbers is a comma-separated string of numbers
+    const payload = {
+      message,
+      language: "english",
+      route: "v3",
+      numbers: phone.toString(),
+      // optionally use flash: "1" or add sender_id setting depending on your account
+    };
+
+    const headers = {
+      Authorization: process.env.FAST2SMS_KEY,
+      "Content-Type": "application/json",
+    };
+
+    // send SMS
+    const fast2smsResp = await axios.post(
+      "https://www.fast2sms.com/dev/bulkV2",
+      payload,
+      { headers }
+    );
+
+    // Check Fast2SMS response for success (they return a JSON)
+    // Many accounts return data like {return: true, message: 'message sent'} but check your account response
+    if (fast2smsResp.data && fast2smsResp.data.return) {
+      return res.json({ success: true, message: "OTP sent successfully" });
+    } else {
+      // If SMS service failed, still keep OTP stored so you can debug, but inform failure
+      console.error("Fast2SMS error:", fast2smsResp.data);
+      return res.status(500).json({ success: false, message: "Failed to send SMS" });
+    }
+
   } catch (err) {
-    console.error("SEND OTP ERROR:", err);
+    console.error("SEND OTP ERROR:", err?.response?.data || err.message || err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
