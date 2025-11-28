@@ -238,9 +238,13 @@ exports.getOrgProfile = async (req, res) => {
 
     res.json({ success: true, org });
   } catch (err) {
-    console.error("ORG PROFILE ERROR:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error("SEND OTP ERROR (RAW):", err?.response?.data || err);
+    return res.status(500).json({
+      success: false,
+      message: err?.response?.data || "Server error",
+    });
   }
+
 };
 
 const axios = require("axios");
