@@ -7,6 +7,7 @@ const WorkerSchema = new mongoose.Schema({
   experience: String,
   location: String,
   phone: { type: String, required: true, unique: true },
+  email: { type: String, unique: true, sparse: true },
   expectedSalary: String,
   availability: String,
   password: { type: String, required: true },

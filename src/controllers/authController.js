@@ -12,7 +12,7 @@ function genToken(payload) {
 ================================ */
 exports.registerWorker = async (req, res) => {
   try {
-    const { name, age, skills, location, phone, password } = req.body;
+    const { name, age, skills, location, phone, email, password } = req.body;
 
     if (!name || !phone || !password) {
       return res.status(400).json({
@@ -48,6 +48,7 @@ exports.registerWorker = async (req, res) => {
       skills: skillsArray,
       location,
       phone,
+      email,
       password: hashed,
     });
 
@@ -347,6 +348,79 @@ exports.verifyOTP = async (req, res) => {
   } catch (err) {
     console.error("VERIFY OTP ERROR:", err);
     res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+/* ================================
+   UPDATE WORKER PROFILE
+================================ */
+exports.updateWorker = async (req, res) => {
+  try {
+    const { name, age, skills, location, email } = req.body;
+
+    // Safe skills handling
+    let skillsArray = [];
+    if (Array.isArray(skills)) {
+      skillsArray = skills;
+    } else if (typeof skills === "string") {
+      skillsArray = skills.split(",").map((s) => s.trim());
+    }
+
+    const updatedData = {
+      name,
+      age,
+      skills: skillsArray,
+      location,
+      email,
+    };
+
+    const worker = await Worker.findByIdAndUpdate(req.user.id, updatedData, {
+      new: true,
+    }).select("-password");
+
+    res.json({
+      success: true,
+      message: "Profile updated successfully",
+      worker,
+    });
+  } catch (err) {
+    console.error("UPDATE WORKER ERROR:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+
+/* ================================
+   UPDATE ORG PROFILE
+================================ */
+exports.updateOrg = async (req, res) => {
+  try {
+    const { name, location, email } = req.body;
+
+    const updatedData = {
+      name,
+      location,
+      email,
+    };
+
+    const org = await Organization.findByIdAndUpdate(req.user.id, updatedData, {
+      new: true,
+    }).select("-password");
+
+    res.json({
+      success: true,
+      message: "Profile updated successfully",
+      org,
+    });
+  } catch (err) {
+    console.error("UPDATE ORG ERROR:", err);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
   }
 };
 

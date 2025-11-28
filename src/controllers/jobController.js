@@ -162,7 +162,7 @@ exports.updateApplicationStatus = async (req, res) => {
     await Notification.create({
       recipient: workerId,
       recipientModel: "Worker",
-      message: `Your application for ${job.title} was ${status}`,
+      message: `Your application for ${job.title} was ${status} by ${job.orgId.name} you can conatct them  at ${job.orgId.phone}`,
       type: "info",
       relatedId: job._id,
       relatedUser: job.orgId,

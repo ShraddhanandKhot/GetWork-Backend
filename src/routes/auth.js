@@ -10,6 +10,8 @@ router.post("/org/register", authCtrl.registerOrg);
 router.post("/org/login", authCtrl.loginOrg);
 router.get("/worker/profile", authMiddleware, authCtrl.getWorkerProfile);
 router.get("/org/profile", authMiddleware, authCtrl.getOrgProfile);
+router.put("/worker/update", authMiddleware, authCtrl.updateWorker);
+router.put("/org/update", authMiddleware, authCtrl.updateOrg);
 
 
 router.post("/send-otp", authCtrl.sendOTP);
