@@ -97,7 +97,8 @@ exports.applyJob = async (req, res) => {
     const workerId = req.user.id;
     const workerName = req.user.name || "A worker"; // Assuming name is in token or fetched
 
-    const job = await Job.findById(id);
+    const job = await Job.findById(id);//populate("orgId", "name phone location");
+
     if (!job) {
       return res.status(404).json({ success: false, message: "Job not found" });
     }
@@ -148,7 +149,8 @@ exports.updateApplicationStatus = async (req, res) => {
     const { id, workerId } = req.params;
     const { status } = req.body; // 'accepted' or 'rejected'
 
-    const job = await Job.findById(id);
+    const job = await Job.findById(id).populate("orgId", "name phone location");
+
     if (!job) return res.status(404).json({ success: false, message: "Job not found" });
 
     // Find applicant
@@ -162,7 +164,7 @@ exports.updateApplicationStatus = async (req, res) => {
     await Notification.create({
       recipient: workerId,
       recipientModel: "Worker",
-      message: `Your application for ${job.title} was ${status} by ${job.orgId.name} you can conatct them  at ${job.orgId.phone}`,
+      message: `Your application for ${job.title} was ${status} by ${job.orgId.name} you can call them  at ${job.orgId.phone} or visit them at ${job.orgId.location}`,
       type: "info",
       relatedId: job._id,
       relatedUser: job.orgId,
