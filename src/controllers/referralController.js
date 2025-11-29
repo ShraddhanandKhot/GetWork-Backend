@@ -1,5 +1,7 @@
 const Referral = require("../models/Referral");
 const ReferralPartner = require("../models/ReferralPartner");
+const Job = require("../models/Job");
+const Worker = require("../models/Worker");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
@@ -49,6 +51,85 @@ exports.login = async (req, res) => {
   }
 };
 
+exports.getJobs = async (req, res) => {
+  try {
+    const jobs = await Job.find().sort({ createdAt: -1 });
+    res.json({ success: true, jobs });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.submitReferral = async (req, res) => {
+  try {
+    const { jobId, workerName, workerPhone, workerPassword, workerDetails } = req.body;
+    const partnerId = req.user.id;
+
+    if (!jobId || !workerName || !workerPhone || !workerPassword) {
+      return res.status(400).json({ success: false, message: "Missing fields" });
+    }
+
+    // 1. Create or Find Worker
+    let worker = await Worker.findOne({ phone: workerPhone });
+    if (!worker) {
+      const hashedPassword = await bcrypt.hash(workerPassword, 10);
+      worker = await Worker.create({
+        name: workerName,
+        phone: workerPhone,
+        password: hashedPassword,
+        referredBy: partnerId, // Store partner ID as string or ObjectId if schema allows
+        ...workerDetails
+      });
+    }
+
+    // 2. Create Referral Record
+    const referral = await Referral.create({
+      referralPartnerId: partnerId,
+      jobId,
+      workerId: worker._id,
+      workerName,
+      workerPhone,
+      workerDetails,
+      status: "pending"
+    });
+
+    // 3. Add to Job Applicants
+    await Job.findByIdAndUpdate(jobId, {
+      $push: { applicants: { worker: worker._id, status: "pending" } }
+    });
+
+    // 4. Update Partner Stats
+    await ReferralPartner.findByIdAndUpdate(partnerId, { $inc: { totalReferrals: 1 } });
+
+    res.json({ success: true, message: "Referral submitted successfully", referral });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+exports.getStats = async (req, res) => {
+  try {
+    const partner = await ReferralPartner.findById(req.user.id);
+    const referrals = await Referral.find({ referralPartnerId: req.user.id }).populate("jobId", "title").sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      stats: {
+        total: partner.totalReferrals,
+        successful: partner.successfulReferrals,
+        badges: partner.badges
+      },
+      referrals
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// Deprecated or Admin only? Keeping for backward compatibility if needed
 exports.createReferral = async (req, res) => {
   try {
     const { helperName, helperPhone, workerName, workerPhone, workerDetails } = req.body;
@@ -70,6 +151,18 @@ exports.updateReferral = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     const r = await Referral.findByIdAndUpdate(id, { status }, { new: true });
+
+    // If hired, update successful referrals count for partner
+    if (status === "hired" && r.referralPartnerId) {
+      await ReferralPartner.findByIdAndUpdate(r.referralPartnerId, { $inc: { successfulReferrals: 1 } });
+      // Check for badges logic here (e.g. if successful > 5, add badge)
+      const partner = await ReferralPartner.findById(r.referralPartnerId);
+      if (partner.successfulReferrals >= 5 && !partner.badges.includes("Top Partner")) {
+        partner.badges.push("Top Partner");
+        await partner.save();
+      }
+    }
+
     res.json({ success: true, message: "Updated", referral: r });
   } catch (err) { console.error(err); res.status(500).json({ success: false, message: "Server error" }); }
 };
