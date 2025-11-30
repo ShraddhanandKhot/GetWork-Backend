@@ -88,6 +88,7 @@ exports.getOrgJobs = async (req, res) => {
 exports.applyJob = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`APPLY JOB REQUEST: JobID=${id}, UserID=${req.user.id}, Role=${req.user.role}`);
 
     // Restrict to workers only
     if (req.user.role !== 'worker') {
@@ -95,11 +96,15 @@ exports.applyJob = async (req, res) => {
     }
 
     const workerId = req.user.id;
-    const workerName = req.user.name || "A worker"; // Assuming name is in token or fetched
 
-    const job = await Job.findById(id);//populate("orgId", "name phone location");
+    // Fetch worker to get name (since token might not have it)
+    const worker = await require("../models/Worker").findById(workerId);
+    const workerName = worker ? worker.name : "A worker";
+
+    const job = await Job.findById(id);
 
     if (!job) {
+      console.log("Job not found for ID:", id);
       return res.status(404).json({ success: false, message: "Job not found" });
     }
 
@@ -112,31 +117,47 @@ exports.applyJob = async (req, res) => {
     // Add worker to applicants
     job.applicants.push({ worker: workerId });
     await job.save();
+    console.log("Worker added to job applicants");
 
     // Create Notification for Organization
-    await Notification.create({
-      recipient: job.orgId,
-      recipientModel: "Organization",
-      message: `${workerName} applied for your job: ${job.title}`,
-      type: "application",
-      relatedId: job._id,
-      relatedUser: workerId,
-      relatedUserModel: "Worker"
-    });
+    if (job.orgId) {
+      try {
+        await Notification.create({
+          recipient: job.orgId,
+          recipientModel: "Organization",
+          message: `${workerName} applied for your job: ${job.title}`,
+          type: "application",
+          relatedId: job._id,
+          relatedUser: workerId,
+          relatedUserModel: "Worker"
+        });
+        console.log("Notification created for Organization");
+      } catch (notifErr) {
+        console.error("FAILED TO CREATE ORG NOTIFICATION:", notifErr);
+        // Don't fail the request just because notification failed
+      }
+    } else {
+      console.warn("Job has no orgId, skipping org notification");
+    }
 
     // Create Notification for Worker
-    await Notification.create({
-      recipient: workerId,
-      recipientModel: "Worker",
-      message: `You successfully applied for: ${job.title}`,
-      type: "info",
-      relatedId: job._id,
-    });
+    try {
+      await Notification.create({
+        recipient: workerId,
+        recipientModel: "Worker",
+        message: `You successfully applied for: ${job.title}`,
+        type: "info",
+        relatedId: job._id,
+      });
+      console.log("Notification created for Worker");
+    } catch (notifErr) {
+      console.error("FAILED TO CREATE WORKER NOTIFICATION:", notifErr);
+    }
 
     res.json({ success: true, message: "Application successful" });
   } catch (err) {
     console.error("APPLY JOB ERROR:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
 
