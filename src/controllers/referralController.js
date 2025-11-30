@@ -72,8 +72,14 @@ exports.submitReferral = async (req, res) => {
       return res.status(400).json({ success: false, message: "Missing fields" });
     }
 
-    // Fetch Partner to get name
-    const partner = await ReferralPartner.findById(partnerId);
+    // Fetch Partner (could be ReferralPartner or Worker)
+    let partner = await ReferralPartner.findById(partnerId);
+    let isWorker = false;
+    if (!partner) {
+      partner = await Worker.findById(partnerId);
+      isWorker = true;
+    }
+
     if (!partner) return res.status(404).json({ success: false, message: "Partner not found" });
 
     // 1. Create or Find Worker
@@ -118,8 +124,10 @@ exports.submitReferral = async (req, res) => {
       });
     }
 
-    // 5. Update Partner Stats
-    await ReferralPartner.findByIdAndUpdate(partnerId, { $inc: { totalReferrals: 1 } });
+    // 5. Update Partner Stats (only if it's a ReferralPartner with stats fields)
+    if (!isWorker) {
+      await ReferralPartner.findByIdAndUpdate(partnerId, { $inc: { totalReferrals: 1 } });
+    }
 
     res.json({ success: true, message: "Referral submitted successfully", referral });
   } catch (err) {
@@ -130,15 +138,26 @@ exports.submitReferral = async (req, res) => {
 
 exports.getStats = async (req, res) => {
   try {
-    const partner = await ReferralPartner.findById(req.user.id);
+    let partner = await ReferralPartner.findById(req.user.id);
+    if (!partner) {
+      partner = await Worker.findById(req.user.id);
+    }
+
+    if (!partner) return res.status(404).json({ success: false, message: "User not found" });
+
     const referrals = await Referral.find({ referralPartnerId: req.user.id }).populate("jobId", "title").sort({ createdAt: -1 });
+
+    // Calculate stats dynamically if not available on model (e.g. for Workers)
+    const total = partner.totalReferrals !== undefined ? partner.totalReferrals : referrals.length;
+    const successful = partner.successfulReferrals !== undefined ? partner.successfulReferrals : referrals.filter(r => r.status === 'hired').length;
+    const badges = partner.badges || [];
 
     res.json({
       success: true,
       stats: {
-        total: partner.totalReferrals,
-        successful: partner.successfulReferrals,
-        badges: partner.badges
+        total,
+        successful,
+        badges
       },
       referrals
     });
