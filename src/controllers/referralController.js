@@ -61,6 +61,8 @@ exports.getJobs = async (req, res) => {
   }
 };
 
+const Notification = require("../models/Notification");
+
 exports.submitReferral = async (req, res) => {
   try {
     const { jobId, workerName, workerPhone, workerPassword, workerDetails } = req.body;
@@ -69,6 +71,10 @@ exports.submitReferral = async (req, res) => {
     if (!jobId || !workerName || !workerPhone || !workerPassword) {
       return res.status(400).json({ success: false, message: "Missing fields" });
     }
+
+    // Fetch Partner to get name
+    const partner = await ReferralPartner.findById(partnerId);
+    if (!partner) return res.status(404).json({ success: false, message: "Partner not found" });
 
     // 1. Create or Find Worker
     let worker = await Worker.findOne({ phone: workerPhone });
@@ -94,12 +100,25 @@ exports.submitReferral = async (req, res) => {
       status: "pending"
     });
 
-    // 3. Add to Job Applicants
-    await Job.findByIdAndUpdate(jobId, {
+    // 3. Add to Job Applicants & Get Job Details
+    const job = await Job.findByIdAndUpdate(jobId, {
       $push: { applicants: { worker: worker._id, status: "pending" } }
-    });
+    }, { new: true }); // Get updated job to ensure we have orgId
 
-    // 4. Update Partner Stats
+    if (job && job.orgId) {
+      // 4. Create Notification for Organization
+      await Notification.create({
+        recipient: job.orgId,
+        recipientModel: "Organization",
+        message: `Worker ${workerName} was referred by ${partner.name} for your job: ${job.title}. Phone: ${workerPhone}`,
+        type: "application",
+        relatedId: job._id,
+        relatedUser: worker._id,
+        relatedUserModel: "Worker"
+      });
+    }
+
+    // 5. Update Partner Stats
     await ReferralPartner.findByIdAndUpdate(partnerId, { $inc: { totalReferrals: 1 } });
 
     res.json({ success: true, message: "Referral submitted successfully", referral });
