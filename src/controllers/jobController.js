@@ -192,6 +192,47 @@ exports.updateApplicationStatus = async (req, res) => {
       relatedUserModel: "Organization"
     });
 
+    // --- REFERRAL SYNC LOGIC ---
+    const referralStatus = status === 'accepted' ? 'hired' : (status === 'rejected' ? 'rejected' : 'pending');
+
+    // Find associated referral
+    const referral = await require("../models/Referral").findOne({ jobId: id, workerId: workerId });
+
+    if (referral) {
+      referral.status = referralStatus;
+      await referral.save();
+
+      // If hired, update partner stats and badges
+      if (referralStatus === 'hired') {
+        const ReferralPartner = require("../models/ReferralPartner");
+        // Check if referrer is a Partner (not a Worker)
+        const partner = await ReferralPartner.findById(referral.referralPartnerId);
+
+        if (partner) {
+          partner.successfulReferrals += 1;
+
+          // Badge Logic
+          if (partner.successfulReferrals >= 1 && !partner.badges.includes("First Success")) {
+            partner.badges.push("First Success");
+          }
+          if (partner.successfulReferrals >= 5 && !partner.badges.includes("Top Partner")) {
+            partner.badges.push("Top Partner");
+          }
+
+          await partner.save();
+
+          // Notify Partner
+          await Notification.create({
+            recipient: partner._id,
+            recipientModel: "ReferralPartner", // Ensure Notification model supports this or use generic 'User'
+            message: `Great news! Your referral ${referral.workerName} was hired for ${job.title}! You earned a reward.`,
+            type: "info",
+            relatedId: job._id
+          });
+        }
+      }
+    }
+
     res.json({ success: true, message: `Application ${status}` });
   } catch (err) {
     console.error("UPDATE STATUS ERROR:", err);
