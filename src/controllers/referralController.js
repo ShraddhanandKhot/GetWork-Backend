@@ -145,18 +145,28 @@ exports.getStats = async (req, res) => {
 
     if (!partner) return res.status(404).json({ success: false, message: "User not found" });
 
-    const referrals = await Referral.find({ referralPartnerId: req.user.id }).populate("jobId", "title").sort({ createdAt: -1 });
+    const referrals = await Referral.find({ referralPartnerId: req.user.id })
+      .populate({
+        path: "jobId",
+        select: "title orgId",
+        populate: {
+          path: "orgId",
+          select: "name"
+        }
+      })
+      .sort({ createdAt: -1 });
 
     // Calculate stats dynamically if not available on model (e.g. for Workers)
     const total = partner.totalReferrals !== undefined ? partner.totalReferrals : referrals.length;
-    const successful = partner.successfulReferrals !== undefined ? partner.successfulReferrals : referrals.filter(r => r.status === 'hired').length;
+    // successful referrals are those with status 'hired'
+    const successful = referrals.filter(r => r.status === 'hired').length;
     const badges = partner.badges || [];
 
     res.json({
       success: true,
       stats: {
         total,
-        successful,
+        successful, // This will be used as "Referral Points"
         badges
       },
       referrals
