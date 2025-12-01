@@ -12,7 +12,8 @@ function genToken(payload) {
 ================================ */
 exports.registerWorker = async (req, res) => {
   try {
-    const { name, age, skills, location, phone, email, password } = req.body;
+    const { name, age, skills, location, email, password } = req.body;
+    const phone = req.body.phone ? req.body.phone.replace(/^0+/, "") : "";
 
     if (!name || !phone || !password) {
       return res.status(400).json({
@@ -68,359 +69,356 @@ exports.registerWorker = async (req, res) => {
       message: "Server error",
     });
   }
-};
+  exports.loginWorker = async (req, res) => {
+    try {
+      const { password } = req.body;
+      const phone = req.body.phone ? req.body.phone.replace(/^0+/, "") : "";
 
+      const w = await Worker.findOne({ phone });
+      if (!w) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid phone or password",
+        });
+      }
 
-/* ================================
-   WORKER LOGIN
-================================ */
-exports.loginWorker = async (req, res) => {
-  try {
-    const { phone, password } = req.body;
+      const match = await bcrypt.compare(password, w.password);
+      if (!match) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid phone or password",
+        });
+      }
 
-    const w = await Worker.findOne({ phone });
-    if (!w) {
-      return res.status(400).json({
+      const token = genToken({ id: w._id, role: "worker" });
+
+      res.json({
+        success: true,
+        message: "Login successful",
+        token,
+        user: { id: w._id, name: w.name },
+      });
+
+    } catch (err) {
+      console.error("WORKER LOGIN ERROR:", err);
+      res.status(500).json({
         success: false,
-        message: "Invalid phone or password",
+        message: "Server error",
+      });
+    }
+  };
+
+
+  /* ================================
+     ORGANIZATION REGISTER
+  ================================ */
+  exports.registerOrg = async (req, res) => {
+    try {
+      const { name, location, email, password } = req.body;
+      const phone = req.body.phone ? req.body.phone.replace(/^0+/, "") : "";
+
+      if (!name || !phone || !password) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing fields",
+        });
+      }
+
+      const exists = await Organization.findOne({ phone });
+      if (exists) {
+        return res.status(400).json({
+          success: false,
+          message: "Phone already registered",
+        });
+      }
+
+      const hashed = await bcrypt.hash(password, 10);
+
+      const o = await Organization.create({
+        name,
+        location,
+        phone,
+        email,
+        password: hashed,
+      });
+
+      const token = genToken({ id: o._id, role: "org" });
+
+      res.json({
+        success: true,
+        message: "Organization registered successfully",
+        token,
+        org: { id: o._id, name: o.name },
+      });
+
+    } catch (err) {
+      console.error("ORG REGISTER ERROR:", err);
+      res.status(500).json({
+        success: false,
+        message: "Server error",
+      });
+    }
+  };
+
+  /* ================================
+     ORGANIZATION LOGIN
+  ================================ */
+  exports.loginOrg = async (req, res) => {
+    try {
+      const { password } = req.body;
+      const phone = req.body.phone ? req.body.phone.replace(/^0+/, "") : "";
+
+      const o = await Organization.findOne({ phone });
+      if (!o) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid phone or password",
+        });
+      }
+
+      const match = await bcrypt.compare(password, o.password);
+      if (!match) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid phone or password",
+        });
+      }
+
+      const token = genToken({ id: o._id, role: "org" });
+
+      res.json({
+        success: true,
+        message: "Login successful",
+        token,
+        org: { id: o._id, name: o.name },
+      });
+
+    } catch (err) {
+      console.error("ORG LOGIN ERROR:", err);
+      res.status(500).json({
+        success: false,
+        message: "Server error",
+      });
+    }
+  };
+
+  exports.getWorkerProfile = async (req, res) => {
+    try {
+      const worker = await Worker.findById(req.user.id).select("-password");
+
+      if (!worker) {
+        return res.status(404).json({
+          success: false,
+          message: "Worker not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        worker,
+      });
+
+    } catch (err) {
+      console.error("GET WORKER PROFILE ERROR:", err);
+      res.status(500).json({
+        success: false,
+        message: "Server error",
+      });
+    }
+  };
+
+  exports.getOrgProfile = async (req, res) => {
+    try {
+      const org = await Organization.findById(req.user.id).select("-password");
+
+      if (!org) {
+        return res.status(404).json({ success: false, message: "Organization not found" });
+      }
+
+      res.json({ success: true, org });
+    } catch (err) {
+      console.error("SEND OTP ERROR (RAW):", err?.response?.data || err);
+      return res.status(500).json({
+        success: false,
+        message: err?.response?.data || "Server error",
       });
     }
 
-    const match = await bcrypt.compare(password, w.password);
-    if (!match) {
-      return res.status(400).json({
+  };
+
+  const axios = require("axios");
+  // ... other requires at top of file (bcrypt, jwt, Worker, Organization, etc.)
+
+  exports.sendOTP = async (req, res) => {
+    try {
+      const { phone } = req.body;
+
+      console.log("Received phone:", phone);
+
+      const user =
+        (await Worker.findOne({ phone })) ||
+        (await Organization.findOne({ phone }));
+
+      if (!user) {
+        console.log("User not found:", phone);
+        return res.status(400).json({ success: false, message: "Phone not registered" });
+      }
+
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      console.log("Generated OTP:", otp);
+
+      user.otp = otp;
+      user.otpExpires = Date.now() + 5 * 60 * 1000;
+      await user.save();
+
+      console.log("Trying to send SMS via Fast2SMS...");
+
+      const axios = require("axios");
+
+      const payload = {
+        route: "v3",
+        sender_id: "TXTIND",        // REQUIRED FOR SOME ACCOUNTS
+        message: `Your GetWork OTP is ${otp}`,
+        language: "english",
+        numbers: phone.toString(),
+      };
+
+      const headers = {
+        authorization: process.env.FAST2SMS_KEY,
+        "Content-Type": "application/json",
+      };
+
+      const response = await axios.post(
+        "https://www.fast2sms.com/dev/bulkV2",
+        payload,
+        { headers }
+      );
+
+      console.log("Fast2SMS Response:", response.data);
+
+      if (response.data && response.data.return === true) {
+        return res.json({ success: true, message: "OTP sent successfully" });
+      } else {
+        console.log("Fast2SMS returned error:", response.data);
+        return res.status(500).json({ success: false, message: "SMS sending failed", details: response.data });
+      }
+
+    } catch (err) {
+      console.log("SEND OTP ERROR — FULL RAW ERROR:");
+      console.log(err?.response?.data || err);
+      return res.status(500).json({ success: false, message: "Server error", error: err?.response?.data || err });
+    }
+  };
+
+
+  exports.verifyOTP = async (req, res) => {
+    try {
+      const { phone, otp } = req.body;
+
+      const user =
+        (await Worker.findOne({ phone })) ||
+        (await Organization.findOne({ phone }));
+
+      if (!user)
+        return res.status(400).json({ success: false, message: "User not found" });
+
+      if (user.otp !== otp || Date.now() > user.otpExpires)
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid or expired OTP" });
+
+      user.otp = null;
+      user.otpExpires = null;
+      await user.save();
+
+      const role = user instanceof Worker ? "worker" : "organization";
+
+      const token = jwt.sign({ id: user._id, role }, process.env.JWT_SECRET, {
+        expiresIn: "7d",
+      });
+
+      res.json({
+        success: true,
+        message: "OTP Verified",
+        token,
+        role,
+      });
+    } catch (err) {
+      console.error("VERIFY OTP ERROR:", err);
+      res.status(500).json({ success: false, message: "Server error" });
+    }
+  };
+
+
+  /* ================================
+     UPDATE WORKER PROFILE
+  ================================ */
+  exports.updateWorker = async (req, res) => {
+    try {
+      const { name, age, skills, location, email } = req.body;
+
+      // Safe skills handling
+      let skillsArray = [];
+      if (Array.isArray(skills)) {
+        skillsArray = skills;
+      } else if (typeof skills === "string") {
+        skillsArray = skills.split(",").map((s) => s.trim());
+      }
+
+      const updatedData = {
+        name,
+        age,
+        skills: skillsArray,
+        location,
+        email,
+      };
+
+      const worker = await Worker.findByIdAndUpdate(req.user.id, updatedData, {
+        new: true,
+      }).select("-password");
+
+      res.json({
+        success: true,
+        message: "Profile updated successfully",
+        worker,
+      });
+    } catch (err) {
+      console.error("UPDATE WORKER ERROR:", err);
+      res.status(500).json({
         success: false,
-        message: "Invalid phone or password",
+        message: "Server error",
       });
     }
+  };
 
-    const token = genToken({ id: w._id, role: "worker" });
+  /* ================================
+     UPDATE ORG PROFILE
+  ================================ */
+  exports.updateOrg = async (req, res) => {
+    try {
+      const { name, location, email } = req.body;
 
-    res.json({
-      success: true,
-      message: "Login successful",
-      token,
-      user: { id: w._id, name: w.name },
-    });
+      const updatedData = {
+        name,
+        location,
+        email,
+      };
 
-  } catch (err) {
-    console.error("WORKER LOGIN ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
+      const org = await Organization.findByIdAndUpdate(req.user.id, updatedData, {
+        new: true,
+      }).select("-password");
 
-
-/* ================================
-   ORGANIZATION REGISTER
-================================ */
-exports.registerOrg = async (req, res) => {
-  try {
-    const { name, location, phone, email, password } = req.body;
-
-    if (!name || !phone || !password) {
-      return res.status(400).json({
+      res.json({
+        success: true,
+        message: "Profile updated successfully",
+        org,
+      });
+    } catch (err) {
+      console.error("UPDATE ORG ERROR:", err);
+      res.status(500).json({
         success: false,
-        message: "Missing fields",
+        message: "Server error",
       });
     }
-
-    const exists = await Organization.findOne({ phone });
-    if (exists) {
-      return res.status(400).json({
-        success: false,
-        message: "Phone already registered",
-      });
-    }
-
-    const hashed = await bcrypt.hash(password, 10);
-
-    const o = await Organization.create({
-      name,
-      location,
-      phone,
-      email,
-      password: hashed,
-    });
-
-    const token = genToken({ id: o._id, role: "org" });
-
-    res.json({
-      success: true,
-      message: "Organization registered successfully",
-      token,
-      org: { id: o._id, name: o.name },
-    });
-
-  } catch (err) {
-    console.error("ORG REGISTER ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
-
-
-/* ================================
-   ORGANIZATION LOGIN
-================================ */
-exports.loginOrg = async (req, res) => {
-  try {
-    const { phone, password } = req.body;
-
-    const o = await Organization.findOne({ phone });
-    if (!o) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid phone or password",
-      });
-    }
-
-    const match = await bcrypt.compare(password, o.password);
-    if (!match) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid phone or password",
-      });
-    }
-
-    const token = genToken({ id: o._id, role: "org" });
-
-    res.json({
-      success: true,
-      message: "Login successful",
-      token,
-      org: { id: o._id, name: o.name },
-    });
-
-  } catch (err) {
-    console.error("ORG LOGIN ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
-exports.getWorkerProfile = async (req, res) => {
-  try {
-    const worker = await Worker.findById(req.user.id).select("-password");
-
-    if (!worker) {
-      return res.status(404).json({
-        success: false,
-        message: "Worker not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      worker,
-    });
-
-  } catch (err) {
-    console.error("GET WORKER PROFILE ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
-
-exports.getOrgProfile = async (req, res) => {
-  try {
-    const org = await Organization.findById(req.user.id).select("-password");
-
-    if (!org) {
-      return res.status(404).json({ success: false, message: "Organization not found" });
-    }
-
-    res.json({ success: true, org });
-  } catch (err) {
-    console.error("SEND OTP ERROR (RAW):", err?.response?.data || err);
-    return res.status(500).json({
-      success: false,
-      message: err?.response?.data || "Server error",
-    });
-  }
-
-};
-
-const axios = require("axios");
-// ... other requires at top of file (bcrypt, jwt, Worker, Organization, etc.)
-
-exports.sendOTP = async (req, res) => {
-  try {
-    const { phone } = req.body;
-
-    console.log("Received phone:", phone);
-
-    const user =
-      (await Worker.findOne({ phone })) ||
-      (await Organization.findOne({ phone }));
-
-    if (!user) {
-      console.log("User not found:", phone);
-      return res.status(400).json({ success: false, message: "Phone not registered" });
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    console.log("Generated OTP:", otp);
-
-    user.otp = otp;
-    user.otpExpires = Date.now() + 5 * 60 * 1000;
-    await user.save();
-
-    console.log("Trying to send SMS via Fast2SMS...");
-
-    const axios = require("axios");
-
-    const payload = {
-      route: "v3",
-      sender_id: "TXTIND",        // REQUIRED FOR SOME ACCOUNTS
-      message: `Your GetWork OTP is ${otp}`,
-      language: "english",
-      numbers: phone.toString(),
-    };
-
-    const headers = {
-      authorization: process.env.FAST2SMS_KEY,
-      "Content-Type": "application/json",
-    };
-
-    const response = await axios.post(
-      "https://www.fast2sms.com/dev/bulkV2",
-      payload,
-      { headers }
-    );
-
-    console.log("Fast2SMS Response:", response.data);
-
-    if (response.data && response.data.return === true) {
-      return res.json({ success: true, message: "OTP sent successfully" });
-    } else {
-      console.log("Fast2SMS returned error:", response.data);
-      return res.status(500).json({ success: false, message: "SMS sending failed", details: response.data });
-    }
-
-  } catch (err) {
-    console.log("SEND OTP ERROR — FULL RAW ERROR:");
-    console.log(err?.response?.data || err);
-    return res.status(500).json({ success: false, message: "Server error", error: err?.response?.data || err });
-  }
-};
-
-
-exports.verifyOTP = async (req, res) => {
-  try {
-    const { phone, otp } = req.body;
-
-    const user =
-      (await Worker.findOne({ phone })) ||
-      (await Organization.findOne({ phone }));
-
-    if (!user)
-      return res.status(400).json({ success: false, message: "User not found" });
-
-    if (user.otp !== otp || Date.now() > user.otpExpires)
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid or expired OTP" });
-
-    user.otp = null;
-    user.otpExpires = null;
-    await user.save();
-
-    const role = user instanceof Worker ? "worker" : "organization";
-
-    const token = jwt.sign({ id: user._id, role }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
-
-    res.json({
-      success: true,
-      message: "OTP Verified",
-      token,
-      role,
-    });
-  } catch (err) {
-    console.error("VERIFY OTP ERROR:", err);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-};
-
-
-/* ================================
-   UPDATE WORKER PROFILE
-================================ */
-exports.updateWorker = async (req, res) => {
-  try {
-    const { name, age, skills, location, email } = req.body;
-
-    // Safe skills handling
-    let skillsArray = [];
-    if (Array.isArray(skills)) {
-      skillsArray = skills;
-    } else if (typeof skills === "string") {
-      skillsArray = skills.split(",").map((s) => s.trim());
-    }
-
-    const updatedData = {
-      name,
-      age,
-      skills: skillsArray,
-      location,
-      email,
-    };
-
-    const worker = await Worker.findByIdAndUpdate(req.user.id, updatedData, {
-      new: true,
-    }).select("-password");
-
-    res.json({
-      success: true,
-      message: "Profile updated successfully",
-      worker,
-    });
-  } catch (err) {
-    console.error("UPDATE WORKER ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
-
-/* ================================
-   UPDATE ORG PROFILE
-================================ */
-exports.updateOrg = async (req, res) => {
-  try {
-    const { name, location, email } = req.body;
-
-    const updatedData = {
-      name,
-      location,
-      email,
-    };
-
-    const org = await Organization.findByIdAndUpdate(req.user.id, updatedData, {
-      new: true,
-    }).select("-password");
-
-    res.json({
-      success: true,
-      message: "Profile updated successfully",
-      org,
-    });
-  } catch (err) {
-    console.error("UPDATE ORG ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-};
+  };
 

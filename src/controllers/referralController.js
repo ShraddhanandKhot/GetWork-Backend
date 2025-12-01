@@ -7,7 +7,8 @@ const jwt = require("jsonwebtoken");
 
 exports.register = async (req, res) => {
   try {
-    const { name, email, phone, password } = req.body;
+    const { name, email, password } = req.body;
+    const phone = req.body.phone ? req.body.phone.replace(/^0+/, "") : "";
 
     // Check if user exists
     const existing = await ReferralPartner.findOne({ $or: [{ email }, { phone }] });
@@ -31,7 +32,8 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { password } = req.body;
+    const phone = req.body.phone ? req.body.phone.replace(/^0+/, "") : "";
 
     // Find user
     const user = await ReferralPartner.findOne({ phone });
@@ -65,7 +67,8 @@ const Notification = require("../models/Notification");
 
 exports.submitReferral = async (req, res) => {
   try {
-    const { jobId, workerName, workerPhone, workerPassword, workerDetails } = req.body;
+    const { jobId, workerName, workerPassword, workerDetails } = req.body;
+    const workerPhone = req.body.workerPhone ? req.body.workerPhone.replace(/^0+/, "") : "";
     const partnerId = req.user.id;
 
     if (!jobId || !workerName || !workerPhone || !workerPassword) {
