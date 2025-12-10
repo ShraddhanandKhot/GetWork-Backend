@@ -351,6 +351,46 @@ exports.verifyOTP = async (req, res) => {
 };
 
 
+exports.resetPassword = async (req, res) => {
+  try {
+    const { phone, newPassword, role } = req.body;
+
+    if (!role || !phone || !newPassword) {
+      return res.status(400).json({ success: false, message: "Missing fields" });
+    }
+
+    let user;
+    if (role === "worker") {
+      user = await Worker.findOne({ phone });
+    } else if (role === "organization") {
+      user = await Organization.findOne({ phone });
+    } else {
+      return res.status(400).json({ success: false, message: "Invalid role" });
+    }
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: "User not found" });
+    }
+
+    // Hash new password
+    const hashed = await bcrypt.hash(newPassword, 10);
+
+    // Update password (no OTP check)
+    user.password = hashed;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Password reset successfully",
+    });
+
+  } catch (err) {
+    console.error("RESET PASSWORD ERROR:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
 /* ================================
    UPDATE WORKER PROFILE
 ================================ */

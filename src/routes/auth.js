@@ -16,6 +16,7 @@ router.put("/org/update", authMiddleware, authCtrl.updateOrg);
 
 router.post("/send-otp", authCtrl.sendOTP);
 router.post("/verify-otp", authCtrl.verifyOTP);
+router.post("/reset-password", authCtrl.resetPassword);
 
 
 module.exports = router;
