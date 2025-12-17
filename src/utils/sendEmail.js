@@ -3,16 +3,19 @@ const nodemailer = require("nodemailer");
 const sendEmail = async (options) => {
     console.log("Configuring email transporter with user:", process.env.EMAIL_USER);
 
-    // Explicit Gmail Configuration
+    // Switch to Port 587 (STARTTLS)
+    // Sometimes Port 465 is blocked by firewalls.
     const transporter = nodemailer.createTransport({
         host: "smtp.gmail.com",
-        port: 465,
-        secure: true, // true for 465, false for other ports
+        port: 587,
+        secure: false, // Must be false for port 587
+        requireTLS: true,
         auth: {
             user: process.env.EMAIL_USER,
             pass: process.env.EMAIL_PASS,
         },
-        connectionTimeout: 10000, // 10 seconds
+        connectionTimeout: 10000,
+        greetingTimeout: 5000,
     });
 
     const mailOptions = {
