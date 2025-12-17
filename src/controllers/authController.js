@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const Worker = require("../models/Worker");
 const Organization = require("../models/Organization");
+const sendEmail = require("../utils/sendEmail");
 
 function genToken(payload) {
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
@@ -252,17 +253,17 @@ const axios = require("axios");
 
 exports.sendOTP = async (req, res) => {
   try {
-    const { phone } = req.body;
+    const { phone, email } = req.body;
 
-    console.log("Received phone:", phone);
-
-    const user =
-      (await Worker.findOne({ phone })) ||
-      (await Organization.findOne({ phone }));
+    let user;
+    if (phone) {
+      user = (await Worker.findOne({ phone })) || (await Organization.findOne({ phone }));
+    } else if (email) {
+      user = (await Worker.findOne({ email })) || (await Organization.findOne({ email }));
+    }
 
     if (!user) {
-      console.log("User not found:", phone);
-      return res.status(400).json({ success: false, message: "Phone not registered" });
+      return res.status(400).json({ success: false, message: "User not found" });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -272,36 +273,50 @@ exports.sendOTP = async (req, res) => {
     user.otpExpires = Date.now() + 5 * 60 * 1000;
     await user.save();
 
-    console.log("Trying to send SMS via Fast2SMS...");
-
-    const axios = require("axios");
-
-    const payload = {
-      route: "v3",
-      sender_id: "TXTIND",        // REQUIRED FOR SOME ACCOUNTS
-      message: `Your GetWork OTP is ${otp}`,
-      language: "english",
-      numbers: phone.toString(),
-    };
-
-    const headers = {
-      authorization: process.env.FAST2SMS_KEY,
-      "Content-Type": "application/json",
-    };
-
-    const response = await axios.post(
-      "https://www.fast2sms.com/dev/bulkV2",
-      payload,
-      { headers }
-    );
-
-    console.log("Fast2SMS Response:", response.data);
-
-    if (response.data && response.data.return === true) {
-      return res.json({ success: true, message: "OTP sent successfully" });
+    if (email) {
+      // Send Email OTP
+      try {
+        await sendEmail({
+          email: user.email,
+          subject: "GetWork Password Reset OTP",
+          message: `<p>Your OTP for password reset is: <strong>${otp}</strong>. It expires in 5 minutes.</p>`,
+        });
+        return res.json({ success: true, message: "OTP sent to email successfully" });
+      } catch (emailError) {
+        console.error("Email send error:", emailError);
+        user.otp = undefined;
+        user.otpExpires = undefined;
+        await user.save();
+        return res.status(500).json({ success: false, message: "Email could not be sent" });
+      }
     } else {
-      console.log("Fast2SMS returned error:", response.data);
-      return res.status(500).json({ success: false, message: "SMS sending failed", details: response.data });
+      // Send SMS OTP (Existing Logic)
+      console.log("Trying to send SMS via Fast2SMS...");
+      const payload = {
+        route: "v3",
+        sender_id: "TXTIND",
+        message: `Your GetWork OTP is ${otp}`,
+        language: "english",
+        numbers: phone.toString(),
+      };
+
+      const headers = {
+        authorization: process.env.FAST2SMS_KEY,
+        "Content-Type": "application/json",
+      };
+
+      const response = await axios.post(
+        "https://www.fast2sms.com/dev/bulkV2",
+        payload,
+        { headers }
+      );
+
+      if (response.data && response.data.return === true) {
+        return res.json({ success: true, message: "OTP sent successfully" });
+      } else {
+        console.log("Fast2SMS returned error:", response.data);
+        return res.status(500).json({ success: false, message: "SMS sending failed", details: response.data });
+      }
     }
 
   } catch (err) {
@@ -314,11 +329,14 @@ exports.sendOTP = async (req, res) => {
 
 exports.verifyOTP = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
+    const { phone, email, otp } = req.body;
 
-    const user =
-      (await Worker.findOne({ phone })) ||
-      (await Organization.findOne({ phone }));
+    let user;
+    if (phone) {
+      user = (await Worker.findOne({ phone })) || (await Organization.findOne({ phone }));
+    } else if (email) {
+      user = (await Worker.findOne({ email })) || (await Organization.findOne({ email }));
+    }
 
     if (!user)
       return res.status(400).json({ success: false, message: "User not found" });
@@ -343,6 +361,7 @@ exports.verifyOTP = async (req, res) => {
       message: "OTP Verified",
       token,
       role,
+      name: user.name
     });
   } catch (err) {
     console.error("VERIFY OTP ERROR:", err);
@@ -353,29 +372,27 @@ exports.verifyOTP = async (req, res) => {
 
 exports.resetPassword = async (req, res) => {
   try {
-    const { phone, newPassword, role } = req.body;
+    const { newPassword } = req.body;
 
-    if (!role || !phone || !newPassword) {
-      return res.status(400).json({ success: false, message: "Missing fields" });
-    }
-
+    // req.user.id comes from authMiddleware
     let user;
-    if (role === "worker") {
-      user = await Worker.findOne({ phone });
-    } else if (role === "organization") {
-      user = await Organization.findOne({ phone });
-    } else {
-      return res.status(400).json({ success: false, message: "Invalid role" });
+    if (req.user.role === "worker") {
+      user = await Worker.findById(req.user.id);
+    } else if (req.user.role === "org" || req.user.role === "organization") {
+      // Note: in loginOrg, role is "org", but verifyOTP sets "organization" (logic in line 335 original).
+      // I should probably unify this. In verifyOTP above line 335: const role = user instanceof Worker ? "worker" : "organization";
+      // Let's stick to what's in the DB or token.
+      user = await Organization.findById(req.user.id);
     }
 
     if (!user) {
-      return res.status(400).json({ success: false, message: "User not found" });
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
     // Hash new password
     const hashed = await bcrypt.hash(newPassword, 10);
 
-    // Update password (no OTP check)
+    // Update password
     user.password = hashed;
     await user.save();
 
