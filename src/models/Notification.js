@@ -9,6 +9,7 @@ const NotificationSchema = new mongoose.Schema({
     relatedUser: { type: mongoose.Schema.Types.ObjectId, refPath: 'relatedUserModel' },
     relatedUserModel: { type: String, enum: ['Worker', 'Organization'] },
     read: { type: Boolean, default: false },
+    actionStatus: { type: String, enum: ['accepted', 'rejected', 'pending'], default: 'pending' }
 }, { timestamps: true });
 
 module.exports = mongoose.model("Notification", NotificationSchema);

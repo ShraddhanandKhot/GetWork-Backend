@@ -24,4 +24,25 @@ router.put("/:id/read", async (req, res) => {
     }
 });
 
+// Update Action Status
+router.put("/:id/status", async (req, res) => {
+    try {
+        const { status } = req.body;
+        await Notification.findByIdAndUpdate(req.params.id, { actionStatus: status, read: true });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+});
+
+// Delete Notification
+router.delete("/:id", async (req, res) => {
+    try {
+        await Notification.findByIdAndDelete(req.params.id);
+        res.json({ success: true, message: "Notification deleted" });
+    } catch (err) {
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+});
+
 module.exports = router;
