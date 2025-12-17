@@ -1,19 +1,20 @@
 const nodemailer = require("nodemailer");
 
 const sendEmail = async (options) => {
-    // 1. Log configuration (mask password)
     console.log("Configuring email transporter with user:", process.env.EMAIL_USER);
 
-    // Create a transporter
+    // Explicit Gmail Configuration
     const transporter = nodemailer.createTransport({
-        service: "gmail",
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true, // true for 465, false for other ports
         auth: {
             user: process.env.EMAIL_USER,
             pass: process.env.EMAIL_PASS,
         },
+        connectionTimeout: 10000, // 10 seconds
     });
 
-    // Define email options
     const mailOptions = {
         from: `GetWork Support <${process.env.EMAIL_USER}>`,
         to: options.email,
@@ -21,13 +22,12 @@ const sendEmail = async (options) => {
         html: options.message,
     };
 
-    // 2. Wrap sendMail in try/catch to log detailed error
     try {
         const info = await transporter.sendMail(mailOptions);
         console.log("Email sent: " + info.response);
     } catch (error) {
         console.error("Nodemailer Error Details:", error);
-        throw error; // Re-throw to be caught by the controller
+        throw error;
     }
 };
 
