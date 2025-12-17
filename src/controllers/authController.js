@@ -287,7 +287,7 @@ exports.sendOTP = async (req, res) => {
         user.otp = undefined;
         user.otpExpires = undefined;
         await user.save();
-        return res.status(500).json({ success: false, message: "Email could not be sent" });
+        return res.status(500).json({ success: false, message: "Email could not be sent: " + emailError.message });
       }
     } else {
       // Send SMS OTP (Existing Logic)
